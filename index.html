@@ -51,7 +51,8 @@
 
   <main class="wrap" id="app-root"></main>
 
-  <script type="text/babel">
+  <!-- Important: data-presets="env,react" and all JSX styles use objects -->
+  <script type="text/babel" data-presets="env,react">
     const {useEffect, useMemo, useRef, useState} = React;
     const DEFAULT_CATEGORIES = ["Living Room","Kitchen","Bathroom","Bedroom","Backyard","Other"];
     const LS_KEY = "moodboard-data-v1";
@@ -232,8 +233,9 @@
             <select value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(c=> <option key={c} value={c}>{c}</option>)}</select>
             <button type="submit">Add</button>
             <button type="button" className="secondary" onClick={exportJSON}>Export JSON</button>
-            <label className="ghost" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid var(--border);cursor:pointer;">
-              Import JSON <input type="file" accept="application/json" style="display:none" onChange={e=>importJSON(e.target.files[0])}/>
+            <label className="ghost" style={{display:"inline-block",padding:"10px 14px",borderRadius:10,border:"1px solid var(--border)",cursor:"pointer"}}>
+              Import JSON
+              <input type="file" accept="application/json" style={{display:"none"}} onChange={e=>importJSON(e.target.files[0])}/>
             </label>
             <textarea placeholder="Optional note…" value={note} onChange={e=>setNote(e.target.value)} />
           </form>
@@ -254,7 +256,10 @@
                 <div className="meta">
                   <span className="tag">{item.category}</span>
                   <div className="row-actions">
-                    <a className="ghost" href={item.url} target="_blank" rel="noreferrer" style="text-decoration:none;padding:6px 10px;border-radius:8px;border:1px solid var(--border);color:var(--muted)">Open</a>
+                    <a className="ghost" href={item.url} target="_blank" rel="noreferrer"
+                       style={{textDecoration:"none",padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",color:"var(--muted)"}}>
+                      Open
+                    </a>
                     <button className="danger" onClick={()=>removeItem(item.id)}>Delete</button>
                   </div>
                 </div>
