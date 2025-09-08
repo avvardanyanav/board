@@ -1,637 +1,484 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Renovation Moodboard (Free)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- React 18 UMD + Babel (for JSX in one file). Safe for small apps like this. -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-// ------------------------------
-// Renovation Moodboard (Free)
-// Single-file React app you can host anywhere (GitHub Pages/Netlify)
-// - Paste TikTok, Instagram, YouTube links — they render inline
-// - Autoplay on scroll for YouTube (muted) via IFrame API
-// - Clean grid, categories (Living Room, Kitchen, Bathroom, Bedroom, Backyard, Other)
-// - Add notes, search, filter by category
-// - Local-only: data saves to your browser (localStorage)
-// - Import/Export JSON for backup or sharing
-// ------------------------------
-
-const DEFAULT_CATEGORIES = [
-  "Living Room",
-  "Kitchen",
-  "Bathroom",
-  "Bedroom",
-  "Backyard",
-  "Other",
-];
-
-const LS_KEY = "moodboard-data-v1";
-
-function detectProvider(url) {
-  if (!url) return "link";
-  const u = url.toLowerCase();
-  if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
-  if (u.includes("tiktok.com")) return "tiktok";
-  if (u.includes("instagram.com")) return "instagram";
-  if (u.includes("facebook.com") || u.includes("fb.watch")) return "facebook";
-  if (u.includes("vimeo.com")) return "vimeo";
-  if (/(\.mp4|\.webm|\.ogg)(\?|$)/i.test(u)) return "filevideo";
-  if (/(\.png|\.jpg|\.jpeg|\.webp|\.gif)(\?|$)/i.test(u)) return "image";
-  return "link";
-}
-
-function getYouTubeId(url) {
-  try {
-    const u = new URL(url);
-    if (u.hostname === "youtu.be") return u.pathname.slice(1);
-    if (u.hostname.includes("youtube.com")) {
-      const v = u.searchParams.get("v");
-      if (v) return v;
-      const parts = u.pathname.split("/").filter(Boolean);
-      if (parts[0] === "shorts" && parts[1]) return parts[1];
-      if (parts[0] === "embed" && parts[1]) return parts[1];
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #12151a;
+      --muted: #8b97a8;
+      --text: #e9edf2;
+      --accent: #69d2ff;
+      --accent-2: #c2f970;
+      --danger: #ff6b6b;
+      --card: #151a21;
+      --border: #222832;
+      --radius: 12px;
     }
-  } catch (_) {}
-  return "";
-}
-
-function getVimeoId(url) {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes("vimeo.com")) {
-      const parts = u.pathname.split("/").filter(Boolean);
-      const idx = parts[0] === "video" ? 1 : 0;
-      if (parts[idx]) return parts[idx];
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 800px at 20% -10%, #17202b 0%, #0b0d10 55%), var(--bg);
+      color: var(--text);
+      font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     }
-  } catch (_) {}
-  return "";
-}
-
-function useLocalStorageState(key, initialValue) {
-  const [state, setState] = useState(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : initialValue;
-    } catch {
-      return initialValue;
+    header {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: saturate(140%) blur(10px);
+      background: color-mix(in srgb, var(--panel) 86%, transparent);
+      border-bottom: 1px solid var(--border);
     }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(state));
-    } catch {}
-  }, [key, state]);
-  return [state, setState];
-}
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    h1 {
+      margin: 0 0 6px; font-size: 18px; letter-spacing: .3px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .badge { padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 12px; }
 
-function injectScriptOnce(src, id) {
-  if (document.getElementById(id)) return;
-  const s = document.createElement("script");
-  s.src = src;
-  s.async = true;
-  s.id = id;
-  document.body.appendChild(s);
-}
+    .controls {
+      display: grid; gap: 10px; grid-template-columns: 1fr minmax(160px, 220px) minmax(160px, 220px) auto auto;
+      align-items: center;
+    }
+    .controls input[type="url"],
+    .controls input[type="text"],
+    .controls select,
+    .controls textarea {
+      width: 100%;
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px;
+      outline: none;
+    }
+    .controls textarea { resize: vertical; min-height: 40px; grid-column: 1 / -1; }
+    .controls .row { display: contents; }
+    button {
+      background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, #fff 0%) 0%, var(--accent) 100%);
+      color: #00121a; border: 0; border-radius: 10px; font-weight: 600; padding: 10px 14px; cursor: pointer;
+    }
+    button.secondary { background: #1b232e; color: var(--text); border: 1px solid var(--border); }
+    button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+    button.danger { background: color-mix(in srgb, var(--danger) 78%, black 10%); color: white; }
 
-function ensureFbRoot() {
-  if (!document.getElementById("fb-root")) {
-    const r = document.createElement("div");
-    r.id = "fb-root";
-    document.body.appendChild(r);
-  }
-}
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+    .toolbar input[type="search"] { flex: 1; min-width: 200px; }
+    .toolbar .right { margin-left: auto; display: flex; gap: 8px; }
 
-function YouTubeCard({ item, observe }) {
-  const vid = getYouTubeId(item.url);
-  const iframeRef = useRef(null);
+    .grid {
+      padding: 18px 16px 60px;
+      display: grid; gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
 
-  useEffect(() => {
-    if (!vid) return;
-    // YouTube Iframe API not strictly necessary for postMessage commands,
-    // but enablejsapi=1 is required.
-    observe(iframeRef);
-  }, [vid, observe]);
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; display: flex; flex-direction: column; min-height: 120px;
+    }
+    .media { aspect-ratio: 16 / 9; background: #0f141b; display: grid; place-items: center; }
+    .media iframe, .media img, .media video { width: 100%; height: 100%; border: 0; object-fit: cover; }
+    .content { padding: 12px; display: grid; gap: 8px; }
+    .meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    .tag { font-size: 12px; color: var(--muted); padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; }
+    .note { color: #cfd6df; white-space: pre-wrap; }
+    .url a { color: var(--accent); text-decoration: none; word-break: break-word; }
+    .row-actions { display: flex; gap: 8px; }
+    .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+    .kicker { color: var(--muted); font-size: 13px; }
+    .hr { height: 1px; background: var(--border); margin: 8px 0; }
 
-  if (!vid) return (
-    <FallbackLinkCard item={item} note="Couldn’t parse YouTube ID." />
-  );
-
-  const src = `https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0&mute=1&playsinline=1`;
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="aspect-video w-full overflow-hidden rounded-xl">
-        <iframe
-          ref={iframeRef}
-          id={`yt-${item.id}`}
-          title={item.title || "YouTube"}
-          src={src}
-          frameBorder="0"
-          allow="autoplay; encrypted-media; picture-in-picture; clipboard-write"
-          allowFullScreen
-          className="w-full h-full"
-          data-ytid={vid}
-        />
-      </div>
-      <CardMeta item={item} />
+    @media (max-width: 760px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+      .controls textarea { grid-column: 1 / -1; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .toolbar .right { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Renovation Moodboard <span class="badge">local-only</span></h1>
+      <div class="kicker">Paste TikTok / Instagram / YouTube / Vimeo links — add notes — search & filter. Data is stored in your browser. Use Export/Import JSON to sync.</div>
     </div>
-  );
-}
+  </header>
 
-function TikTokCard({ item }) {
-  useEffect(() => {
-    injectScriptOnce("https://www.tiktok.com/embed.js", "tiktok-embed-js");
-  }, []);
+  <main class="wrap" id="app-root"></main>
 
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden">
-        {/* TikTok official embed */}
-        <blockquote className="tiktok-embed" cite={item.url} data-video-id="" style={{ maxWidth: "605px", minWidth: "325px" }}>
-          <section>
-            <a href={item.url} target="_blank" rel="noreferrer noopener" className="underline">Open TikTok</a>
-          </section>
-        </blockquote>
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+  <script type="text/babel">
+    const {useEffect, useMemo, useRef, useState} = React;
 
-function InstagramCard({ item }) {
-  useEffect(() => {
-    injectScriptOnce("https://www.instagram.com/embed.js", "instagram-embed-js");
-    ensureFbRoot();
-    injectScriptOnce("https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v18.0", "facebook-jssdk");
-    // Reprocess embeds when items mount
-    const tryProcess = () => {
-      // eslint-disable-next-line no-undef
-      if (window.instgrm && window.instgrm.Embeds) {
-        window.instgrm.Embeds.process();
-      }
-    };
-    const id = setTimeout(tryProcess, 200);
-    return () => clearTimeout(id);
-  }, []);
+    // ------------------------------
+    // Config
+    // ------------------------------
+    const DEFAULT_CATEGORIES = ["Living Room", "Kitchen", "Bathroom", "Bedroom", "Backyard", "Other"];
+    const LS_KEY = "moodboard-data-v1";
 
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden">
-        {/* Instagram official embed */}
-        <blockquote className="instagram-media" data-instgrm-permalink={`${item.url}?utm_source=ig_embed&utm_campaign=loading`} data-instgrm-version="14" style={{ background: "#fff", border: 0, margin: 0, padding: 0 }}>
-          <a href={item.url} target="_blank" rel="noreferrer noopener">View on Instagram</a>
-        </blockquote>
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+    // ------------------------------
+    // Utilities
+    // ------------------------------
+    function detectProvider(url) {
+      if (!url) return "link";
+      const u = url.toLowerCase();
+      if (u.includes("youtube.com") || u.includes("youtu.be")) return "youtube";
+      if (u.includes("tiktok.com")) return "tiktok";
+      if (u.includes("instagram.com")) return "instagram";
+      if (u.includes("facebook.com") || u.includes("fb.watch")) return "facebook";
+      if (u.includes("vimeo.com")) return "vimeo";
+      if (/(\.mp4|\.webm|\.ogg)(\?|$)/i.test(u)) return "filevideo";
+      if (/(\.png|\.jpg|\.jpeg|\.webp|\.gif)(\?|$)/i.test(u)) return "image";
+      return "link";
+    }
 
-function FacebookCard({ item }) {
-  const containerRef = useRef(null);
-  const playerRef = useRef(null);
-  const id = useMemo(() => `fbv-${item.id}`, [item.id]);
-  const obsRef = useRef(null);
+    function getYouTubeId(url) {
+      try {
+        const u = new URL(url);
+        if (u.hostname === "youtu.be") return u.pathname.slice(1);
+        if (u.hostname.includes("youtube.com")) {
+          const v = u.searchParams.get("v"); if (v) return v;
+          const parts = u.pathname.split("/").filter(Boolean);
+          if (parts[0] === "shorts" && parts[1]) return parts[1];
+          if (parts[0] === "embed" && parts[1]) return parts[1];
+        }
+      } catch {}
+      return "";
+    }
 
-  useEffect(() => {
-    ensureFbRoot();
-    injectScriptOnce("https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v18.0", "facebook-jssdk");
+    function getVimeoId(url) {
+      try {
+        const u = new URL(url);
+        if (u.hostname.includes("vimeo.com")) {
+          const parts = u.pathname.split("/").filter(Boolean);
+          const idx = parts[0] === "video" ? 1 : 0;
+          if (parts[idx]) return parts[idx];
+        }
+      } catch {}
+      return "";
+    }
 
-    const subscribeWhenReady = () => {
-      // @ts-ignore
-      if (window.FB && window.FB.Event && window.FB.Event.subscribe) {
-        window.FB.Event.subscribe("xfbml.ready", (msg) => {
-          try {
-            if (msg.type === "video" && msg.id === id) {
-              playerRef.current = msg.instance;
-              try { playerRef.current.mute && playerRef.current.mute(); } catch {}
-            }
-          } catch {}
-        });
-      } else {
-        setTimeout(subscribeWhenReady, 250);
-      }
-    };
-    subscribeWhenReady();
+    function getTikTokId(url) {
+      // Handles https://www.tiktok.com/@user/video/1234567890 and https://vm.tiktok.com/...
+      const m = url.match(/\/video\/(\d+)/);
+      return m ? m[1] : "";
+    }
 
-    const parseWhenReady = () => {
-      // @ts-ignore
-      if (window.FB && window.FB.XFBML && containerRef.current) {
-        window.FB.XFBML.parse(containerRef.current);
-      } else {
-        setTimeout(parseWhenReady, 250);
-      }
-    };
-    parseWhenReady();
-
-    obsRef.current = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        const visible = entry.isIntersecting && entry.intersectionRatio > 0.6;
-        const p = playerRef.current;
-        if (p && typeof p.play === "function" && typeof p.pause === "function") {
-          try {
-            if (visible) { p.mute && p.mute(); p.play(); } else { p.pause(); }
-          } catch {}
+    function useLocalStorageState(key, initialValue) {
+      const [state, setState] = useState(() => {
+        try {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw) : initialValue;
+        } catch {
+          return initialValue;
         }
       });
-    }, { threshold: [0, 0.6, 1] });
+      useEffect(() => {
+        try { localStorage.setItem(key, JSON.stringify(state)); } catch {}
+      }, [key, state]);
+      return [state, setState];
+    }
 
-    const el = containerRef.current;
-    if (el) obsRef.current.observe(el);
-    return () => { obsRef.current && obsRef.current.disconnect(); };
-  }, [id]);
+    function injectScriptOnce(src, id) {
+      if (document.getElementById(id)) return;
+      const s = document.createElement("script");
+      s.src = src; s.async = true; s.id = id;
+      document.body.appendChild(s);
+    }
 
-  return (
-    <div ref={containerRef} className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden">
-        {/* Facebook Video embed requires the video post to be PUBLIC */}
-        <div id={id} className="fb-video" data-href={item.url} data-width="auto" data-allowfullscreen="true" data-autoplay="false"></div>
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+    function ensureFbRoot() {
+      if (!document.getElementById("fb-root")) {
+        const r = document.createElement("div");
+        r.id = "fb-root"; document.body.appendChild(r);
+      }
+    }
 
-function VimeoCard({ item }) {
-  const iframeRef = useRef(null);
-  const playerRef = useRef(null);
-  const obsRef = useRef(null);
-  const vid = getVimeoId(item.url);
+    // ------------------------------
+    // Media Cards
+    // ------------------------------
+    function YouTubeCard({ item, observe }) {
+      const vid = getYouTubeId(item.url);
+      const iframeRef = useRef(null);
 
-  useEffect(() => {
-    if (!vid) return;
-    injectScriptOnce("https://player.vimeo.com/api/player.js", "vimeo-player-js");
-    const tick = setInterval(() => {
-      // @ts-ignore
-      if (window.Vimeo && window.Vimeo.Player && iframeRef.current) {
-        // @ts-ignore
-        playerRef.current = new window.Vimeo.Player(iframeRef.current);
-        clearInterval(tick);
-        try { playerRef.current.setVolume && playerRef.current.setVolume(0); } catch {}
-        obsRef.current = new IntersectionObserver((entries) => {
+      useEffect(() => {
+        if (!vid) return;
+        observe(iframeRef);
+      }, [vid, observe]);
+
+      if (!vid) return <div className="media empty">Invalid YouTube link</div>;
+      const src = `https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0&mute=1&playsinline=1`;
+      return (
+        <div className="media">
+          <iframe
+            ref={iframeRef}
+            src={src}
+            title="YouTube"
+            allow="autoplay; encrypted-media; picture-in-picture; web-share"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+
+    function VimeoCard({ item }) {
+      const id = getVimeoId(item.url);
+      if (!id) return <div className="media empty">Invalid Vimeo link</div>;
+      const src = `https://player.vimeo.com/video/${id}?autopause=1&muted=1`;
+      return (
+        <div className="media">
+          <iframe
+            src={src}
+            title="Vimeo"
+            allow="autoplay; fullscreen; picture-in-picture; clipboard-write"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+
+    function TikTokCard({ item }) {
+      const id = getTikTokId(item.url);
+      if (!id) return <div className="media empty">Paste a TikTok video URL</div>;
+      const src = `https://www.tiktok.com/embed/v2/video/${id}`;
+      return (
+        <div className="media">
+          <iframe
+            src={src}
+            title="TikTok"
+            allow="autoplay; encrypted-media; picture-in-picture; clipboard-write"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+
+    function InstagramCard({ item }) {
+      // Use Instagram embed script to render properly
+      useEffect(() => {
+        injectScriptOnce("https://www.instagram.com/embed.js", "instgrm-embed");
+        const t = setTimeout(() => window.instgrm?.Embeds?.process(), 50);
+        return () => clearTimeout(t);
+      }, [item.url]);
+
+      return (
+        <div className="media" style={{display: "block"}}>
+          <blockquote className="instagram-media" data-instgrm-permalink={item.url} data-instgrm-version="14" style={{margin: 0, width: "100%"}}></blockquote>
+        </div>
+      );
+    }
+
+    function FacebookCard({ item }) {
+      useEffect(() => {
+        ensureFbRoot();
+        injectScriptOnce("https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v20.0", "fb-sdk");
+        const t = setTimeout(() => window.FB?.XFBML?.parse(), 100);
+        return () => clearTimeout(t);
+      }, [item.url]);
+
+      return (
+        <div className="media" style={{display: "block"}}>
+          <div className="fb-video" data-href={item.url} data-allowfullscreen="true" data-autoplay="false" data-show-text="false"></div>
+        </div>
+      );
+    }
+
+    function ImageCard({ item }) {
+      return (
+        <div className="media">
+          <img src={item.url} alt="" loading="lazy" />
+        </div>
+      );
+    }
+
+    function FileVideoCard({ item }) {
+      return (
+        <div className="media">
+          <video src={item.url} controls loop muted playsInline />
+        </div>
+      );
+    }
+
+    function LinkCard({ item }) {
+      return (
+        <div className="media" style={{display:"grid", placeItems:"center", padding:16}}>
+          <div className="url">
+            <a href={item.url} target="_blank" rel="noreferrer">{item.url}</a>
+          </div>
+        </div>
+      );
+    }
+
+    function MediaCard({ item, observe }) {
+      switch (item.provider) {
+        case "youtube": return <YouTubeCard item={item} observe={observe} />;
+        case "vimeo": return <VimeoCard item={item} />;
+        case "tiktok": return <TikTokCard item={item} />;
+        case "instagram": return <InstagramCard item={item} />;
+        case "facebook": return <FacebookCard item={item} />;
+        case "image": return <ImageCard item={item} />;
+        case "filevideo": return <FileVideoCard item={item} />;
+        default: return <LinkCard item={item} />;
+      }
+    }
+
+    // ------------------------------
+    // Main App
+    // ------------------------------
+    function App() {
+      const [items, setItems] = useLocalStorageState(LS_KEY, []);
+      const [url, setUrl] = useState("");
+      const [note, setNote] = useState("");
+      const [category, setCategory] = useState(DEFAULT_CATEGORIES[0]);
+      const [search, setSearch] = useState("");
+      const [catFilter, setCatFilter] = useState("All");
+
+      // Maintain a set of observed YouTube iframes for autoplay on scroll
+      const ytIframesRef = useRef(new Set());
+
+      const observe = React.useCallback((iframeRef) => {
+        if (!iframeRef?.current) return;
+        ytIframesRef.current.add(iframeRef.current);
+      }, []);
+
+      useEffect(() => {
+        // IntersectionObserver to auto play/pause YouTube
+        const observer = new IntersectionObserver((entries) => {
           entries.forEach((entry) => {
-            const visible = entry.isIntersecting && entry.intersectionRatio > 0.6;
-            const p = playerRef.current;
-            if (!p) return;
-            try { visible ? p.play() : p.pause(); } catch {}
+            const el = entry.target;
+            const isVisible = entry.isIntersecting && entry.intersectionRatio >= 0.6;
+            try {
+              const msg = JSON.stringify({ event: "command", func: isVisible ? "playVideo" : "pauseVideo", args: [] });
+              el.contentWindow?.postMessage(msg, "*");
+            } catch {}
           });
         }, { threshold: [0, 0.6, 1] });
-        obsRef.current.observe(iframeRef.current);
+
+        ytIframesRef.current.forEach((el) => observer.observe(el));
+        return () => observer.disconnect();
+      }, [items]);
+
+      const categories = useMemo(() => {
+        const base = new Set(DEFAULT_CATEGORIES);
+        for (const it of items) base.add(it.category);
+        return Array.from(base);
+      }, [items]);
+
+      const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return items.filter(it => {
+          const catOk = catFilter === "All" || it.category === catFilter;
+          const qOk = !q || (it.url.toLowerCase().includes(q) || (it.note || "").toLowerCase().includes(q));
+          return catOk && qOk;
+        });
+      }, [items, search, catFilter]);
+
+      function addItem(e) {
+        e?.preventDefault?.();
+        if (!url) return;
+        const provider = detectProvider(url);
+        const it = {
+          id: Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+          url, note, category, provider,
+          createdAt: new Date().toISOString()
+        };
+        setItems([it, ...items]);
+        setUrl(""); setNote("");
       }
-    }, 200);
-    return () => { clearInterval(tick); if (obsRef.current) obsRef.current.disconnect(); };
-  }, [vid]);
 
-  if (!vid) return <FallbackLinkCard item={item} note="Couldn’t parse Vimeo ID."/>;
-  const src = `https://player.vimeo.com/video/${vid}?muted=1&pip=1&playsinline=1`;
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="aspect-video w-full overflow-hidden rounded-xl">
-        <iframe ref={iframeRef} src={src} title={item.title || "Vimeo"} allow="autoplay; encrypted-media; picture-in-picture" className="w-full h-full" frameBorder="0" allowFullScreen />
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+      function removeItem(id) {
+        setItems(items.filter(x => x.id !== id));
+      }
 
-function FileVideoCard({ item }) {
-  const videoRef = useRef(null);
-  const obsRef = useRef(null);
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    obsRef.current = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        const visible = entry.isIntersecting && entry.intersectionRatio > 0.6;
-        try { visible ? el.play() : el.pause(); } catch {}
-      });
-    }, { threshold: [0, 0.6, 1] });
-    obsRef.current.observe(el);
-    return () => { obsRef.current && obsRef.current.disconnect(); };
-  }, []);
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden">
-        <video ref={videoRef} src={item.url} controls muted playsInline className="w-full h-auto" />
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+      function exportJSON() {
+        const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "moodboard.json"; a.click();
+        URL.revokeObjectURL(url);
+      }
 
-function ImageCard({ item }) {
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden">
-        <img src={item.url} alt={item.title || "image"} className="w-full h-auto" />
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+      function importJSON(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+            if (Array.isArray(data)) setItems(data);
+            else alert("Invalid JSON");
+          } catch {
+            alert("Invalid JSON");
+          }
+        };
+        reader.readAsText(file);
+      }
 
-function LinkCard({ item }) {
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden aspect-video grid place-items-center border">
-        <a href={item.url} target="_blank" rel="noreferrer noopener" className="underline text-sm">Open Link</a>
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+      return (
+        <>
+          <section className="wrap" style={{paddingTop: 12}}>
+            <form className="controls" onSubmit={addItem}>
+              <input type="url" placeholder="Paste link (YouTube, TikTok, Instagram, Vimeo, image, .mp4…)"
+                     value={url} onChange={(e)=>setUrl(e.target.value)} required />
+              <select value={category} onChange={(e)=>setCategory(e.target.value)}>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button type="submit">Add to board</button>
+              <button type="button" className="secondary" onClick={exportJSON}>Export JSON</button>
+              <label className="ghost" style={{display:"inline-block", padding:"10px 14px", borderRadius:10, border:"1px solid var(--border)", cursor:"pointer"}}>
+                Import JSON
+                <input type="file" accept="application/json" style={{display:"none"}}
+                       onChange={(e)=>importJSON(e.target.files[0])}/>
+              </label>
+              <textarea placeholder="Optional note…" value={note} onChange={(e)=>setNote(e.target.value)} />
+            </form>
 
-function FallbackLinkCard({ item, note }) {
-  return (
-    <div className="bg-white rounded-2xl shadow p-2">
-      <div className="w-full rounded-xl overflow-hidden aspect-video grid place-items-center border">
-        <div className="text-center px-3">
-          <p className="text-sm font-medium">{note}</p>
-          <a href={item.url} target="_blank" rel="noreferrer noopener" className="underline text-sm">Open Link</a>
-        </div>
-      </div>
-      <CardMeta item={item} />
-    </div>
-  );
-}
+            <div className="toolbar">
+              <input type="search" placeholder="Search notes or links…" value={search} onChange={(e)=>setSearch(e.target.value)} />
+              <div className="right">
+                <select value={catFilter} onChange={(e)=>setCatFilter(e.target.value)}>
+                  <option>All</option>
+                  {categories.map(c => <option key={c}>{c}</option>)}
+                </select>
+                <button type="button" className="ghost" onClick={()=>{ if (confirm("Clear all items?")) setItems([]); }} >Clear all</button>
+              </div>
+            </div>
+          </section>
 
-function CardMeta({ item }) {
-  return (
-    <div className="px-1 pt-2">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold leading-tight">{item.title || "Untitled"}</h3>
-          <p className="text-xs text-gray-500">{item.category}</p>
-        </div>
-        <a href={item.url} target="_blank" rel="noreferrer noopener" className="text-xs underline shrink-0">Open</a>
-      </div>
-      {item.notes && <p className="text-xs mt-1 text-gray-700 whitespace-pre-wrap">{item.notes}</p>}
-    </div>
-  );
-}
-
-function AddItemForm({ categories, onAdd, onCreateCategory }) {
-  const [url, setUrl] = useState("");
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
-  const [cat, setCat] = useState(categories[0] || "Other");
-  const [newCat, setNewCat] = useState("");
-
-  const add = () => {
-    if (!url.trim()) return;
-    const provider = detectProvider(url.trim());
-    const item = {
-      id: (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), 
-      url: url.trim(),
-      provider,
-      title: title.trim(),
-      notes: notes.trim(),
-      category: cat,
-      addedAt: Date.now(),
-    };
-    onAdd(item);
-    setUrl("");
-    setTitle("");
-    setNotes("");
-  };
-
-  const createCat = () => {
-    const n = newCat.trim();
-    if (!n) return;
-    onCreateCategory(n);
-    setCat(n);
-    setNewCat("");
-  };
-
-  return (
-    <div className="bg-white rounded-2xl shadow p-4 space-y-3">
-      <h2 className="text-lg font-semibold">Add item</h2>
-      <div className="grid gap-2">
-        <label className="text-xs">Link (TikTok, Instagram, Facebook, YouTube, Vimeo, MP4/WebM, image, or any URL)</label>
-        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." className="border rounded-xl px-3 py-2" />
-      </div>
-      <div className="grid gap-2">
-        <label className="text-xs">Title (optional)</label>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="E.g., Cozy L-shaped couch" className="border rounded-xl px-3 py-2" />
-      </div>
-      <div className="grid gap-2">
-        <label className="text-xs">Notes (optional)</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Measurements, price, color, ideas..." className="border rounded-xl px-3 py-2 min-h-[80px]" />
-      </div>
-      <div className="grid gap-2">
-        <label className="text-xs">Category</label>
-        <div className="flex gap-2">
-          <select value={cat} onChange={(e) => setCat(e.target.value)} className="border rounded-xl px-3 py-2">
-            {categories.map((c) => (
-              <option key={c} value={c}>{c}</option>
+          <section className="grid">
+            {filtered.length === 0 && (
+              <div className="empty card" style={{gridColumn:"1/-1", padding:24}}>
+                No items yet. Paste a link above and hit “Add to board”.
+              </div>
+            )}
+            {filtered.map(item => (
+              <article key={item.id} className="card">
+                <MediaCard item={item} observe={observe} />
+                <div className="content">
+                  <div className="meta">
+                    <span className="tag">{item.category}</span>
+                    <div className="row-actions">
+                      <a className="ghost" href={item.url} target="_blank" rel="noreferrer" style={{textDecoration:"none", padding:"6px 10px", borderRadius:8, border:"1px solid var(--border)", color:"var(--muted)"}}>Open</a>
+                      <button className="danger" onClick={()=>removeItem(item.id)}>Delete</button>
+                    </div>
+                  </div>
+                  {item.note ? <div className="note">{item.note}</div> : null}
+                  <div className="url"><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></div>
+                </div>
+              </article>
             ))}
-          </select>
-          <input value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="New category" className="border rounded-xl px-3 py-2 flex-1" />
-          <button onClick={createCat} className="px-3 py-2 rounded-xl bg-gray-900 text-white">Add Category</button>
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <button onClick={add} className="px-4 py-2 rounded-xl bg-gray-900 text-white">Save</button>
-        <button onClick={() => { setUrl(""); setTitle(""); setNotes(""); }} className="px-4 py-2 rounded-xl border">Clear</button>
-      </div>
-    </div>
-  );
-}
-
-function Toolbar({ categories, activeCategory, setActiveCategory, query, setQuery, onExport, onImport, onReset }) {
-  const fileRef = useRef(null);
-
-  const handleImport = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const json = JSON.parse(ev.target.result);
-        onImport(json);
-      } catch {
-        alert("Invalid JSON file");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  return (
-    <div className="bg-white rounded-2xl shadow p-4 flex flex-wrap items-center gap-3">
-      <select value={activeCategory} onChange={(e) => setActiveCategory(e.target.value)} className="border rounded-xl px-3 py-2">
-        <option value="All">All rooms</option>
-        {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
-      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search title/notes" className="border rounded-xl px-3 py-2 min-w-[240px]" />
-      <div className="ml-auto flex gap-2">
-        <button onClick={onExport} className="px-3 py-2 rounded-xl border">Export JSON</button>
-        <input type="file" accept="application/json" className="hidden" ref={fileRef} onChange={handleImport} />
-        <button onClick={() => fileRef.current?.click()} className="px-3 py-2 rounded-xl border">Import JSON</button>
-        <button onClick={onReset} className="px-3 py-2 rounded-xl border">Reset (Clear All)</button>
-      </div>
-    </div>
-  );
-}
-
-function Grid({ items, observe }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {items.map((item) => (
-        <CardSwitcher key={item.id} item={item} observe={observe} />
-      ))}
-    </div>
-  );
-}
-
-function CardSwitcher({ item, observe }) {
-  switch (item.provider) {
-    case "youtube":
-      return <YouTubeCard item={item} observe={observe} />;
-    case "tiktok":
-      return <TikTokCard item={item} />;
-    case "instagram":
-      return <InstagramCard item={item} />;
-    case "facebook":
-      return <FacebookCard item={item} />;
-    case "vimeo":
-      return <VimeoCard item={item} />;
-    case "filevideo":
-      return <FileVideoCard item={item} />;
-    case "image":
-      return <ImageCard item={item} />;
-    default:
-      return <LinkCard item={item} />;
-  }
-}
-
-function useYouTubeAutoplayObserver() {
-  const iframes = useRef(new Set());
-  const obs = useRef(null);
-
-  useEffect(() => {
-    const handle = (entries) => {
-      entries.forEach((entry) => {
-        const iframe = entry.target;
-        const visible = entry.isIntersecting && entry.intersectionRatio > 0.6;
-        const cmd = visible ? "playVideo" : "pauseVideo";
-        try {
-          iframe.contentWindow?.postMessage(
-            JSON.stringify({ event: "command", func: cmd, args: [] }),
-            "*"
-          );
-        } catch {}
-      });
-    };
-    obs.current = new IntersectionObserver(handle, { threshold: [0, 0.6, 1] });
-    return () => {
-      obs.current?.disconnect();
-    };
-  }, []);
-
-  const observe = (iframeRef) => {
-    const el = iframeRef.current;
-    if (!el) return;
-    // ensure we track
-    if (!iframes.current.has(el)) {
-      iframes.current.add(el);
-      obs.current?.observe(el);
+          </section>
+        </>
+      );
     }
-  };
 
-  return observe;
-}
+    const root = ReactDOM.createRoot(document.getElementById("app-root"));
+    root.render(<App />);
+  </script>
 
-export default function App() {
-  const [store, setStore] = useLocalStorageState(LS_KEY, {
-    categories: DEFAULT_CATEGORIES,
-    items: [],
-  });
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [query, setQuery] = useState("");
-  const observe = useYouTubeAutoplayObserver();
-
-  // Load embed helpers once
-  useEffect(() => {
-    // These scripts are injected by the specific cards too — here we simply ensure they're present
-    injectScriptOnce("https://www.tiktok.com/embed.js", "tiktok-embed-js");
-    injectScriptOnce("https://www.instagram.com/embed.js", "instagram-embed-js");
-  }, []);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return store.items
-      .filter((it) => activeCategory === "All" || it.category === activeCategory)
-      .filter((it) => !q || (it.title?.toLowerCase().includes(q) || it.notes?.toLowerCase().includes(q)))
-      .sort((a, b) => b.addedAt - a.addedAt);
-  }, [store.items, activeCategory, query]);
-
-  const onAdd = (item) => setStore((s) => ({ ...s, items: [item, ...s.items] }));
-
-  const onCreateCategory = (name) => setStore((s) => {
-    if (s.categories.includes(name)) return s;
-    return { ...s, categories: [...s.categories, name] };
-  });
-
-  const onExport = () => {
-    const blob = new Blob([JSON.stringify(store, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "renovation-moodboard.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const onImport = (json) => {
-    if (!json || typeof json !== "object") return;
-    setStore({
-      categories: Array.isArray(json.categories) && json.categories.length > 0 ? json.categories : DEFAULT_CATEGORIES,
-      items: Array.isArray(json.items) ? json.items : [],
-    });
-  };
-
-  const onReset = () => {
-    if (confirm("Clear all items and categories?")) {
-      setStore({ categories: DEFAULT_CATEGORIES, items: [] });
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
-      <header className="sticky top-0 z-10 backdrop-blur bg-white/80 border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-3">
-          <div className="text-2xl font-bold">🏡 Renovation Moodboard</div>
-          <div className="text-sm text-gray-500">Save ideas for Living Room, Kitchen, Bathroom, Bedroom, Backyard…</div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-3 gap-6">
-        <section className="lg:col-span-2 space-y-4">
-          <Toolbar
-            categories={store.categories}
-            activeCategory={activeCategory}
-            setActiveCategory={setActiveCategory}
-            query={query}
-            setQuery={setQuery}
-            onExport={onExport}
-            onImport={onImport}
-            onReset={onReset}
-          />
-          <Grid items={filtered} observe={observe} />
-        </section>
-
-        <aside className="space-y-4">
-          <AddItemForm categories={store.categories} onAdd={onAdd} onCreateCategory={onCreateCategory} />
-          <div className="bg-white rounded-2xl shadow p-4">
-            <h3 className="text-base font-semibold mb-2">Tips</h3>
-            <ul className="list-disc pl-5 text-sm space-y-1 text-gray-700">
-              <li>Paste full post URLs from TikTok/Instagram/Facebook/YouTube/Vimeo — they’ll show inline (Facebook must be a PUBLIC post/video). For direct files (.mp4/.webm) paste the file link.</li>
-              <li>Autoplay on scroll (muted) for YouTube, Facebook, Vimeo, and direct .mp4/.webm; pause when scrolled away. TikTok/Instagram autoplay is limited by their embed rules.</li>
-              <li>Use <b>Export JSON</b> regularly to back up or move boards between browsers.</li>
-              <li>Use categories as rooms (add more as needed: Office, Entryway, Nursery, etc.).</li>
-              <li>For images, paste direct links ending with .jpg/.png/.webp/.gif.</li>
-            </ul>
-          </div>
-        </aside>
-      </main>
-
-      <footer className="max-w-7xl mx-auto px-4 pb-10 text-xs text-gray-500">
-        <p>Local-only, private. No accounts, no servers. Host as a static page if you want access from phone/laptop.</p>
-      </footer>
-    </div>
-  );
-}
+  <!-- FB SDK root for video embeds -->
+  <div id="fb-root"></div>
+</body>
+</html>
