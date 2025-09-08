@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>Renovation Moodboard (Free)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <!-- React 18 UMD + Babel (for JSX in one file). Safe for small apps like this. -->
+  <!-- React 18 UMD + Babel (for JSX in one file) -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -16,7 +16,6 @@
       --muted: #8b97a8;
       --text: #e9edf2;
       --accent: #69d2ff;
-      --accent-2: #c2f970;
       --danger: #ff6b6b;
       --card: #151a21;
       --border: #222832;
@@ -37,18 +36,16 @@
       border-bottom: 1px solid var(--border);
     }
     .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
-    h1 {
-      margin: 0 0 6px; font-size: 18px; letter-spacing: .3px;
-      display: flex; align-items: center; gap: 10px;
-    }
+    h1 { margin: 0 0 6px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
     .badge { padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 12px; }
 
     .controls {
-      display: grid; gap: 10px; grid-template-columns: 1fr minmax(160px, 220px) minmax(160px, 220px) auto auto;
+      display: grid; gap: 10px;
+      grid-template-columns: 1fr minmax(160px,220px) auto auto auto;
       align-items: center;
     }
     .controls input[type="url"],
-    .controls input[type="text"],
+    .controls input[type="search"],
     .controls select,
     .controls textarea {
       width: 100%;
@@ -58,7 +55,7 @@
       outline: none;
     }
     .controls textarea { resize: vertical; min-height: 40px; grid-column: 1 / -1; }
-    .controls .row { display: contents; }
+
     button {
       background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, #fff 0%) 0%, var(--accent) 100%);
       color: #00121a; border: 0; border-radius: 10px; font-weight: 600; padding: 10px 14px; cursor: pointer;
@@ -68,7 +65,6 @@
     button.danger { background: color-mix(in srgb, var(--danger) 78%, black 10%); color: white; }
 
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-    .toolbar input[type="search"] { flex: 1; min-width: 200px; }
     .toolbar .right { margin-left: auto; display: flex; gap: 8px; }
 
     .grid {
@@ -79,7 +75,7 @@
 
     .card {
       background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-      overflow: hidden; display: flex; flex-direction: column; min-height: 120px;
+      overflow: hidden; display: flex; flex-direction: column;
     }
     .media { aspect-ratio: 16 / 9; background: #0f141b; display: grid; place-items: center; }
     .media iframe, .media img, .media video { width: 100%; height: 100%; border: 0; object-fit: cover; }
@@ -93,9 +89,11 @@
     .kicker { color: var(--muted); font-size: 13px; }
     .hr { height: 1px; background: var(--border); margin: 8px 0; }
 
-    @media (max-width: 760px) {
-      .controls { grid-template-columns: 1fr 1fr; }
-      .controls textarea { grid-column: 1 / -1; }
+    @media (max-width: 900px) {
+      .controls { grid-template-columns: 1fr 1fr auto auto; }
+    }
+    @media (max-width: 640px) {
+      .controls { grid-template-columns: 1fr; }
       .toolbar { flex-direction: column; align-items: stretch; }
       .toolbar .right { margin-left: 0; }
     }
@@ -163,8 +161,7 @@
     }
 
     function getTikTokId(url) {
-      // Handles https://www.tiktok.com/@user/video/1234567890 and https://vm.tiktok.com/...
-      const m = url.match(/\/video\/(\d+)/);
+      const m = String(url).match(/\/video\/(\d+)/);
       return m ? m[1] : "";
     }
 
@@ -173,9 +170,7 @@
         try {
           const raw = localStorage.getItem(key);
           return raw ? JSON.parse(raw) : initialValue;
-        } catch {
-          return initialValue;
-        }
+        } catch { return initialValue; }
       });
       useEffect(() => {
         try { localStorage.setItem(key, JSON.stringify(state)); } catch {}
@@ -187,9 +182,8 @@
       if (document.getElementById(id)) return;
       const s = document.createElement("script");
       s.src = src; s.async = true; s.id = id;
-      document.body.appendChild(s);
+      document.head.appendChild(s);
     }
-
     function ensureFbRoot() {
       if (!document.getElementById("fb-root")) {
         const r = document.createElement("div");
@@ -198,69 +192,159 @@
     }
 
     // ------------------------------
-    // Media Cards
+    // YT IFrame API + Intersection (robust autoplay)
     // ------------------------------
-    function YouTubeCard({ item, observe }) {
-      const vid = getYouTubeId(item.url);
-      const iframeRef = useRef(null);
+    function loadYouTubeAPI() {
+      if (window.YT?.Player) return Promise.resolve();
+      return new Promise((resolve) => {
+        if (window._ytApiLoading) { window._ytApiLoading.push(resolve); return; }
+        window._ytApiLoading = [resolve];
+        const s = document.createElement("script");
+        s.src = "https://www.youtube.com/iframe_api"; s.async = true;
+        document.head.appendChild(s);
+        const prev = window.onYouTubeIframeAPIReady;
+        window.onYouTubeIframeAPIReady = () => {
+          prev?.();
+          window._ytApiLoading.forEach(fn => fn());
+          window._ytApiLoading = null;
+        };
+      });
+    }
+
+    function useYouTubePlayers() {
+      const players = useRef(new Map()); // mountEl -> { player, ready, wantPlay }
+      const ioRef = useRef(null);
 
       useEffect(() => {
-        if (!vid) return;
-        observe(iframeRef);
-      }, [vid, observe]);
+        ioRef.current = new IntersectionObserver((entries) => {
+          entries.forEach(({ target, isIntersecting, intersectionRatio }) => {
+            const vis = isIntersecting && intersectionRatio >= 0.6;
+            const rec = players.current.get(target);
+            if (!rec) return;
+            rec.wantPlay = vis;
+            if (rec.ready) {
+              try {
+                if (vis) { rec.player.mute?.(); rec.player.playVideo(); }
+                else { rec.player.pauseVideo(); }
+              } catch {}
+            }
+          });
+        }, { threshold: [0, 0.6, 1] });
+        return () => ioRef.current?.disconnect();
+      }, []);
 
-      if (!vid) return <div className="media empty">Invalid YouTube link</div>;
-      const src = `https://www.youtube.com/embed/${vid}?enablejsapi=1&rel=0&mute=1&playsinline=1`;
+      const register = React.useCallback(async (mountEl, videoId) => {
+        if (!mountEl || !videoId) return;
+        ioRef.current?.observe(mountEl);
+        await loadYouTubeAPI();
+
+        const player = new window.YT.Player(mountEl, {
+          videoId,
+          playerVars: {
+            playsinline: 1,
+            rel: 0,
+            modestbranding: 1,
+            // critical so commands are accepted on hosted sites
+            origin: location.origin,
+            mute: 1,
+            autoplay: 0
+          },
+          events: {
+            onReady: (e) => {
+              const rec = players.current.get(mountEl);
+              if (!rec) return;
+              rec.ready = true;
+              try {
+                e.target.mute?.();
+                if (rec.wantPlay) e.target.playVideo();
+              } catch {}
+            }
+          }
+        });
+
+        players.current.set(mountEl, { player, ready: false, wantPlay: false });
+      }, []);
+
+      return register;
+    }
+
+    // ------------------------------
+    // Vimeo autoplay via Player API
+    // ------------------------------
+    function useVimeoAutoplay(iframeRef) {
+      useEffect(() => {
+        const el = iframeRef.current;
+        if (!el) return;
+        injectScriptOnce("https://player.vimeo.com/api/player.js", "vimeo-player-js");
+        let player = null, io = null, tick = null;
+
+        const init = () => {
+          if (!window.Vimeo?.Player) { tick = setTimeout(init, 200); return; }
+          player = new window.Vimeo.Player(el);
+          try { player.setVolume?.(0); } catch {}
+          io = new IntersectionObserver((entries) => {
+            entries.forEach(({ isIntersecting, intersectionRatio }) => {
+              const vis = isIntersecting && intersectionRatio >= 0.6;
+              try { vis ? player.play() : player.pause(); } catch {}
+            });
+          }, { threshold: [0, 0.6, 1] });
+          io.observe(el);
+        };
+        init();
+
+        return () => { if (io) io.disconnect(); if (tick) clearTimeout(tick); };
+      }, [iframeRef]);
+    }
+
+    // ------------------------------
+    // Media Cards
+    // ------------------------------
+    function YouTubeCard({ item, register }) {
+      const vid = getYouTubeId(item.url);
+      const mountRef = useRef(null);
+
+      useEffect(() => {
+        if (vid && mountRef.current) register(mountRef.current, vid);
+      }, [vid, register]);
+
+      if (!vid) return <FallbackLinkCard item={item} note="Couldn’t parse YouTube ID." />;
+
       return (
-        <div className="media">
-          <iframe
-            ref={iframeRef}
-            src={src}
-            title="YouTube"
-            allow="autoplay; encrypted-media; picture-in-picture; web-share"
-            allowFullScreen
-          />
+        <div className="media" style={{display:"block"}}>
+          {/* YT API renders iframe inside this div */}
+          <div ref={mountRef} title="YouTube"></div>
         </div>
       );
     }
 
     function VimeoCard({ item }) {
       const id = getVimeoId(item.url);
-      if (!id) return <div className="media empty">Invalid Vimeo link</div>;
-      const src = `https://player.vimeo.com/video/${id}?autopause=1&muted=1`;
+      const iframeRef = useRef(null);
+      useVimeoAutoplay(iframeRef);
+      if (!id) return <FallbackLinkCard item={item} note="Couldn’t parse Vimeo ID." />;
+      const src = `https://player.vimeo.com/video/${id}?muted=1&pip=1&playsinline=1`;
       return (
         <div className="media">
-          <iframe
-            src={src}
-            title="Vimeo"
-            allow="autoplay; fullscreen; picture-in-picture; clipboard-write"
-            allowFullScreen
-          />
+          <iframe ref={iframeRef} src={src} title="Vimeo" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
         </div>
       );
     }
 
     function TikTokCard({ item }) {
       const id = getTikTokId(item.url);
-      if (!id) return <div className="media empty">Paste a TikTok video URL</div>;
+      if (!id) return <FallbackLinkCard item={item} note="Paste a TikTok video URL" />;
       const src = `https://www.tiktok.com/embed/v2/video/${id}`;
       return (
         <div className="media">
-          <iframe
-            src={src}
-            title="TikTok"
-            allow="autoplay; encrypted-media; picture-in-picture; clipboard-write"
-            allowFullScreen
-          />
+          <iframe src={src} title="TikTok" allow="autoplay; encrypted-media; picture-in-picture; clipboard-write" allowFullScreen />
         </div>
       );
     }
 
     function InstagramCard({ item }) {
-      // Use Instagram embed script to render properly
       useEffect(() => {
         injectScriptOnce("https://www.instagram.com/embed.js", "instgrm-embed");
-        const t = setTimeout(() => window.instgrm?.Embeds?.process(), 50);
+        const t = setTimeout(() => window.instgrm?.Embeds?.process(), 80);
         return () => clearTimeout(t);
       }, [item.url]);
 
@@ -272,16 +356,53 @@
     }
 
     function FacebookCard({ item }) {
+      const containerRef = useRef(null);
+      const playerRef = useRef(null);
+      const id = useMemo(() => `fbv-${item.id}`, [item.id]);
+      const obsRef = useRef(null);
+
       useEffect(() => {
         ensureFbRoot();
         injectScriptOnce("https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v20.0", "fb-sdk");
-        const t = setTimeout(() => window.FB?.XFBML?.parse(), 100);
-        return () => clearTimeout(t);
-      }, [item.url]);
+
+        const subscribe = () => {
+          if (window.FB?.Event?.subscribe) {
+            window.FB.Event.subscribe("xfbml.ready", (msg) => {
+              try {
+                if (msg.type === "video" && msg.id === id) {
+                  playerRef.current = msg.instance;
+                  try { playerRef.current.mute?.(); } catch {}
+                }
+              } catch {}
+            });
+          } else setTimeout(subscribe, 200);
+        };
+        subscribe();
+
+        const parse = () => {
+          if (window.FB?.XFBML && containerRef.current) window.FB.XFBML.parse(containerRef.current);
+          else setTimeout(parse, 200);
+        };
+        parse();
+
+        obsRef.current = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            const visible = entry.isIntersecting && entry.intersectionRatio >= 0.6;
+            const p = playerRef.current;
+            if (p && typeof p.play === "function" && typeof p.pause === "function") {
+              try { visible ? (p.mute?.(), p.play()) : p.pause(); } catch {}
+            }
+          });
+        }, { threshold: [0, 0.6, 1] });
+
+        const el = containerRef.current;
+        if (el) obsRef.current.observe(el);
+        return () => { obsRef.current?.disconnect(); };
+      }, [id]);
 
       return (
-        <div className="media" style={{display: "block"}}>
-          <div className="fb-video" data-href={item.url} data-allowfullscreen="true" data-autoplay="false" data-show-text="false"></div>
+        <div ref={containerRef} className="media" style={{display:"block"}}>
+          <div id={id} className="fb-video" data-href={item.url} data-allowfullscreen="true" data-autoplay="false"></div>
         </div>
       );
     }
@@ -295,9 +416,21 @@
     }
 
     function FileVideoCard({ item }) {
+      const videoRef = useRef(null);
+      useEffect(() => {
+        const el = videoRef.current; if (!el) return;
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach(({isIntersecting, intersectionRatio}) => {
+            const vis = isIntersecting && intersectionRatio >= 0.6;
+            try { vis ? el.play() : el.pause(); } catch {}
+          });
+        }, { threshold: [0, 0.6, 1] });
+        io.observe(el);
+        return () => io.disconnect();
+      }, []);
       return (
         <div className="media">
-          <video src={item.url} controls loop muted playsInline />
+          <video ref={videoRef} src={item.url} controls loop muted playsInline />
         </div>
       );
     }
@@ -312,9 +445,20 @@
       );
     }
 
-    function MediaCard({ item, observe }) {
+    function FallbackLinkCard({ item, note }) {
+      return (
+        <div className="media" style={{display:"grid", placeItems:"center", padding:16}}>
+          <div className="url" style={{textAlign:"center"}}>
+            <div style={{marginBottom:8, color:"var(--muted)"}}>{note}</div>
+            <a href={item.url} target="_blank" rel="noreferrer">{item.url}</a>
+          </div>
+        </div>
+      );
+    }
+
+    function MediaCard({ item, register }) {
       switch (item.provider) {
-        case "youtube": return <YouTubeCard item={item} observe={observe} />;
+        case "youtube": return <YouTubeCard item={item} register={register} />;
         case "vimeo": return <VimeoCard item={item} />;
         case "tiktok": return <TikTokCard item={item} />;
         case "instagram": return <InstagramCard item={item} />;
@@ -326,7 +470,7 @@
     }
 
     // ------------------------------
-    // Main App
+    // App
     // ------------------------------
     function App() {
       const [items, setItems] = useLocalStorageState(LS_KEY, []);
@@ -336,30 +480,7 @@
       const [search, setSearch] = useState("");
       const [catFilter, setCatFilter] = useState("All");
 
-      // Maintain a set of observed YouTube iframes for autoplay on scroll
-      const ytIframesRef = useRef(new Set());
-
-      const observe = React.useCallback((iframeRef) => {
-        if (!iframeRef?.current) return;
-        ytIframesRef.current.add(iframeRef.current);
-      }, []);
-
-      useEffect(() => {
-        // IntersectionObserver to auto play/pause YouTube
-        const observer = new IntersectionObserver((entries) => {
-          entries.forEach((entry) => {
-            const el = entry.target;
-            const isVisible = entry.isIntersecting && entry.intersectionRatio >= 0.6;
-            try {
-              const msg = JSON.stringify({ event: "command", func: isVisible ? "playVideo" : "pauseVideo", args: [] });
-              el.contentWindow?.postMessage(msg, "*");
-            } catch {}
-          });
-        }, { threshold: [0, 0.6, 1] });
-
-        ytIframesRef.current.forEach((el) => observer.observe(el));
-        return () => observer.disconnect();
-      }, [items]);
+      const register = useYouTubePlayers();
 
       const categories = useMemo(() => {
         const base = new Set(DEFAULT_CATEGORIES);
@@ -388,10 +509,7 @@
         setItems([it, ...items]);
         setUrl(""); setNote("");
       }
-
-      function removeItem(id) {
-        setItems(items.filter(x => x.id !== id));
-      }
+      function removeItem(id) { setItems(items.filter(x => x.id !== id)); }
 
       function exportJSON() {
         const blob = new Blob([JSON.stringify(items, null, 2)], { type: "application/json" });
@@ -400,7 +518,6 @@
         a.href = url; a.download = "moodboard.json"; a.click();
         URL.revokeObjectURL(url);
       }
-
       function importJSON(file) {
         if (!file) return;
         const reader = new FileReader();
@@ -408,10 +525,9 @@
           try {
             const data = JSON.parse(reader.result);
             if (Array.isArray(data)) setItems(data);
+            else if (Array.isArray(data.items)) setItems(data.items);
             else alert("Invalid JSON");
-          } catch {
-            alert("Invalid JSON");
-          }
+          } catch { alert("Invalid JSON"); }
         };
         reader.readAsText(file);
       }
@@ -425,12 +541,11 @@
               <select value={category} onChange={(e)=>setCategory(e.target.value)}>
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <button type="submit">Add to board</button>
+              <button type="submit">Add</button>
               <button type="button" className="secondary" onClick={exportJSON}>Export JSON</button>
-              <label className="ghost" style={{display:"inline-block", padding:"10px 14px", borderRadius:10, border:"1px solid var(--border)", cursor:"pointer"}}>
+              <label className="ghost" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid var(--border);cursor:pointer;">
                 Import JSON
-                <input type="file" accept="application/json" style={{display:"none"}}
-                       onChange={(e)=>importJSON(e.target.files[0])}/>
+                <input type="file" accept="application/json" style="display:none" onChange={(e)=>importJSON(e.target.files[0])}/>
               </label>
               <textarea placeholder="Optional note…" value={note} onChange={(e)=>setNote(e.target.value)} />
             </form>
@@ -450,17 +565,17 @@
           <section className="grid">
             {filtered.length === 0 && (
               <div className="empty card" style={{gridColumn:"1/-1", padding:24}}>
-                No items yet. Paste a link above and hit “Add to board”.
+                No items yet. Paste a link above and hit “Add”.
               </div>
             )}
             {filtered.map(item => (
               <article key={item.id} className="card">
-                <MediaCard item={item} observe={observe} />
+                <MediaCard item={item} register={register} />
                 <div className="content">
                   <div className="meta">
                     <span className="tag">{item.category}</span>
                     <div className="row-actions">
-                      <a className="ghost" href={item.url} target="_blank" rel="noreferrer" style={{textDecoration:"none", padding:"6px 10px", borderRadius:8, border:"1px solid var(--border)", color:"var(--muted)"}}>Open</a>
+                      <a className="ghost" href={item.url} target="_blank" rel="noreferrer" style="text-decoration:none;padding:6px 10px;border-radius:8px;border:1px solid var(--border);color:var(--muted)">Open</a>
                       <button className="danger" onClick={()=>removeItem(item.id)}>Delete</button>
                     </div>
                   </div>
