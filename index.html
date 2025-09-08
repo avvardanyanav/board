@@ -103,7 +103,7 @@
   <header>
     <div class="wrap">
       <h1>Renovation Moodboard <span class="badge">local-only</span></h1>
-      <div class="kicker">Paste TikTok / Instagram / YouTube / Vimeo links — add notes — search & filter. Data is stored in your browser. Use Export/Import JSON to sync.</div>
+      <div class="kicker">Paste TikTok / Instagram / YouTube / Vimeo / Facebook links — add notes — search & filter. Data stays in your browser. Use Export/Import JSON to sync.</div>
     </div>
   </header>
 
@@ -184,15 +184,9 @@
       s.src = src; s.async = true; s.id = id;
       document.head.appendChild(s);
     }
-    function ensureFbRoot() {
-      if (!document.getElementById("fb-root")) {
-        const r = document.createElement("div");
-        r.id = "fb-root"; document.body.appendChild(r);
-      }
-    }
 
     // ------------------------------
-    // YT IFrame API + Intersection (robust autoplay)
+    // YouTube IFrame API + Intersection (robust autoplay)
     // ------------------------------
     function loadYouTubeAPI() {
       if (window.YT?.Player) return Promise.resolve();
@@ -244,8 +238,7 @@
             playsinline: 1,
             rel: 0,
             modestbranding: 1,
-            // critical so commands are accepted on hosted sites
-            origin: location.origin,
+            origin: location.origin, // critical so commands are accepted on hosted sites
             mute: 1,
             autoplay: 0
           },
@@ -355,54 +348,27 @@
       );
     }
 
+    // NEW: Facebook via plugin (no SDK). Works for PUBLIC posts/videos.
     function FacebookCard({ item }) {
-      const containerRef = useRef(null);
-      const playerRef = useRef(null);
-      const id = useMemo(() => `fbv-${item.id}`, [item.id]);
-      const obsRef = useRef(null);
+      const raw = String(item.url || "");
+      const normalized = raw.replace("m.facebook.com", "www.facebook.com");
+      const isReel = /\/reel\//i.test(normalized) || /\/reels\//i.test(normalized);
+      const base = isReel
+        ? "https://www.facebook.com/plugins/post.php"
+        : "https://www.facebook.com/plugins/video.php";
 
-      useEffect(() => {
-        ensureFbRoot();
-        injectScriptOnce("https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v20.0", "fb-sdk");
-
-        const subscribe = () => {
-          if (window.FB?.Event?.subscribe) {
-            window.FB.Event.subscribe("xfbml.ready", (msg) => {
-              try {
-                if (msg.type === "video" && msg.id === id) {
-                  playerRef.current = msg.instance;
-                  try { playerRef.current.mute?.(); } catch {}
-                }
-              } catch {}
-            });
-          } else setTimeout(subscribe, 200);
-        };
-        subscribe();
-
-        const parse = () => {
-          if (window.FB?.XFBML && containerRef.current) window.FB.XFBML.parse(containerRef.current);
-          else setTimeout(parse, 200);
-        };
-        parse();
-
-        obsRef.current = new IntersectionObserver((entries) => {
-          entries.forEach((entry) => {
-            const visible = entry.isIntersecting && entry.intersectionRatio >= 0.6;
-            const p = playerRef.current;
-            if (p && typeof p.play === "function" && typeof p.pause === "function") {
-              try { visible ? (p.mute?.(), p.play()) : p.pause(); } catch {}
-            }
-          });
-        }, { threshold: [0, 0.6, 1] });
-
-        const el = containerRef.current;
-        if (el) obsRef.current.observe(el);
-        return () => { obsRef.current?.disconnect(); };
-      }, [id]);
+      // Using width=560 for good aspect; outer container is 16:9 so it scales.
+      const src = base + "?href=" + encodeURIComponent(normalized) + "&show_text=false&width=560";
 
       return (
-        <div ref={containerRef} className="media" style={{display:"block"}}>
-          <div id={id} className="fb-video" data-href={item.url} data-allowfullscreen="true" data-autoplay="false"></div>
+        <div className="media" style={{ display: "block" }}>
+          <iframe
+            title="Facebook"
+            src={src}
+            style={{ width: "100%", height: "100%" }}
+            allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; web-share"
+            allowFullScreen
+          />
         </div>
       );
     }
@@ -536,16 +502,16 @@
         <>
           <section className="wrap" style={{paddingTop: 12}}>
             <form className="controls" onSubmit={addItem}>
-              <input type="url" placeholder="Paste link (YouTube, TikTok, Instagram, Vimeo, image, .mp4…)"
+              <input type="url" placeholder="Paste link (YouTube, TikTok, Instagram, Facebook, Vimeo, image, .mp4…)"
                      value={url} onChange={(e)=>setUrl(e.target.value)} required />
               <select value={category} onChange={(e)=>setCategory(e.target.value)}>
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <button type="submit">Add</button>
               <button type="button" className="secondary" onClick={exportJSON}>Export JSON</button>
-              <label className="ghost" style="display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid var(--border);cursor:pointer;">
+              <label className="ghost" style={{display:"inline-block", padding:"10px 14px", borderRadius:10, border:"1px solid var(--border)", cursor:"pointer"}}>
                 Import JSON
-                <input type="file" accept="application/json" style="display:none" onChange={(e)=>importJSON(e.target.files[0])}/>
+                <input type="file" accept="application/json" style={{display:"none"}} onChange={(e)=>importJSON(e.target.files[0])}/>
               </label>
               <textarea placeholder="Optional note…" value={note} onChange={(e)=>setNote(e.target.value)} />
             </form>
@@ -575,7 +541,7 @@
                   <div className="meta">
                     <span className="tag">{item.category}</span>
                     <div className="row-actions">
-                      <a className="ghost" href={item.url} target="_blank" rel="noreferrer" style="text-decoration:none;padding:6px 10px;border-radius:8px;border:1px solid var(--border);color:var(--muted)">Open</a>
+                      <a className="ghost" href={item.url} target="_blank" rel="noreferrer" style={{textDecoration:"none", padding:"6px 10px", borderRadius:8, border:"1px solid var(--border)", color:"var(--muted)"}}>Open</a>
                       <button className="danger" onClick={()=>removeItem(item.id)}>Delete</button>
                     </div>
                   </div>
@@ -592,8 +558,5 @@
     const root = ReactDOM.createRoot(document.getElementById("app-root"));
     root.render(<App />);
   </script>
-
-  <!-- FB SDK root for video embeds -->
-  <div id="fb-root"></div>
 </body>
 </html>
